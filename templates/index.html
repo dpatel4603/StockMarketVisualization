@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+<head>
+    <title>S&P 500 Visualization</title>
+</head>
+<body>
+    <h1>S&P 500 Index Over Time</h1>
+    <h3>S&P 500 Year 2000 to Year 2024</h3>
+    <form action="/update_plot" method="post">
+        <label for="ticker">Input Company Ticker: </label>
+        <input type="text" id="ticker" name="ticker"><br>
+        <label for="beg-time">Input Beginning Date: </label>
+        <input type="date" id="beg-time" name="beg-time"><br>
+        <label for="end-time">Input Ending Date: </label>
+        <input type="date" id="end-time" name="end-time"><br>
+        <input type="submit" value="Submit">
+    </form>
+    {% if img_data %}
+    <img src="{{ img_data }}" alt="S&P 500 plot">
+    {% endif %}
+</body>
+</html>
