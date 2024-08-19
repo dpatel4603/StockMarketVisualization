@@ -36,10 +36,16 @@ def render_content(tab):
                 dcc.Input(id="ticker-2", type="text", placeholder="Optional enter a ticker here", debounce=True,
                           required=False),
             ], style={'display': 'flex', 'alignItems': 'center', 'gap': '10px'}),
-            html.P("Select Beginning Time: "),
-            dcc.Input(id="beg-time", type="text", placeholder="YYYY-MM-DD", debounce=True, value=last_month),
-            html.P("Select Ending Time: "),
-            dcc.Input(id="end-time", type="text", placeholder="YYYY-MM-DD", debounce=True, value=today),
+            html.Div([
+                html.P("Select Beginning Time: "),
+                dcc.Input(id="beg-time", type="text", placeholder="YYYY-MM-DD", debounce=True, value=last_month),
+                html.P("Select Ending Time: "),
+                dcc.Input(id="end-time", type="text", placeholder="YYYY-MM-DD", debounce=True, value=today),
+                ], style={'display': 'flex', 'alignItems': 'center', 'gap': '10px'}),
+            html.Div([
+               html.P("Select Metric"),
+               dcc.Dropdown(['Open', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'Close', id="metric")
+            ], style={'display': '20px', 'alignItems': 'center', 'gap': '20px'}),
             dcc.Graph(id="time-series-chart"),
             dcc.Graph(id="candlestick-chart")
 
@@ -64,29 +70,30 @@ def render_content(tab):
     [Input("ticker", "value"),
      Input("ticker-2", "value"),
      Input("beg-time", "value"),
-     Input("end-time", "value")])
-def display_time_series(ticker, ticker2, start_date, end_date):
-    if ticker and start_date and end_date:
+     Input("end-time", "value"),
+     Input("metric", "value"),])
+def display_time_series(ticker, ticker2, start_date, end_date, metric):
+    if ticker and start_date and end_date and metric:
         try:
             stock = yf.Ticker(ticker)
             df = stock.history(start=start_date, end=end_date)
             fig = go.Figure()
-            fig.add_scatter(x=df.index, y=df['Close'], mode='lines', name=f'{ticker}')
-            fig.update_layout(xaxis_title='Dates', yaxis_title='Close Price',
+            fig.add_scatter(x=df.index, y=df[metric], mode='lines', name=f'{ticker}')
+            fig.update_layout(xaxis_title='Dates', yaxis_title=f'{metric}',
                               legend_title='Company Names', title=f'{ticker} from {start_date} - {end_date}')
 
             if ticker2:  # Check if there's a second ticker provided
                 stock2 = yf.Ticker(ticker2)
                 df2 = stock2.history(start=start_date, end=end_date)
                 if not df2.empty:
-                    fig.add_scatter(x=df2.index, y=df2['Close'], mode='lines', name=f'{ticker2}')
+                    fig.add_scatter(x=df2.index, y=df2[metric], mode='lines', name=f'{ticker2}')
                     fig.update_layout(title=f"{ticker} and {ticker2} from {start_date} - {end_date}")
 
             return fig
         except Exception as e:
             return px.line(title=f"An error occurred: {str(e)}")
     else:
-        return px.line(title="Please provide ticker, start date, and end date")
+        return px.line(title="Please provide ticker, start date, end date, and metric")
 
 
 @app.callback(
