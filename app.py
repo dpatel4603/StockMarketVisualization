@@ -1,4 +1,4 @@
-from dash import Dash, dcc, html, Input, Output
+from dash import Dash, dcc, html, Input, Output, dash_table, State
 import yfinance as yf
 import plotly.express as px
 import plotly.graph_objects as go
@@ -74,14 +74,44 @@ def render_content(tab):
         ])
     elif tab == 'tech-ind':
         return html.Div([
-            html.H3('Technical Indicators'),
-            dcc.Graph(id='graph-2'),
+          dcc.Graph(id="graph-3")
         ])
     elif tab == 'pred-ind':
         return html.Div([
             html.H3('Predictive Analysis'),
             dcc.Graph(id='graph-3'),
         ])
+    elif tab == 'company-fin':
+        return html.Div([
+            html.H3('Company Financials'),
+            dcc.Input(id="fin-ticker", type="text", placeholder="Enter ticker like AAPL", debounce=True),
+            dcc.Dropdown(
+                options=[
+                    {'label': '2020', 'value': 2020},
+                    {'label': '2021', 'value': 2021},
+                    {'label': '2022', 'value': 2022},
+                    {'label': '2023', 'value': 2023}
+                ],
+                value=2020,
+                id="fin-year-dropdown"
+            ),
+            dcc.Dropdown(
+                options=[
+                    {'label': "Balance Sheet", 'value': "balance_sheet"},
+                    {'label': "Income Statement", 'value': "income_statement"},
+                    {'label': "Cash Flow", 'value': "cash_flow"}
+                ],
+                id="fin-type-dropdown",
+                value="balance_sheet"
+            ),
+            html.Button('Submit', id='fin-submit', n_clicks=0),
+            html.Div(id='financial-output')
+        ], style={'text-align': 'left', 'margin-left': '0px'})
+    elif tab == 'news':
+        return html.Div([
+            html.H3('Recent News and Stock Information'),
+        ])
+
 
 
 @app.callback(
@@ -145,6 +175,42 @@ def display_candlestick_graph(ticker, start_date, end_date, year, quarter):
         return fig
     except Exception as e:
         return px.line(title=f"An error occurred: {str(e)}")
+
+@app.callback(
+    Output('financial-output', 'children'),
+    [Input('fin-submit', 'n_clicks')],
+    [State('fin-ticker', 'value'), State('fin-year-dropdown', 'value'), State('fin-type-dropdown', 'value')])
+def update_financial_output(n_clicks, ticker, year, fin_type):
+    if n_clicks > 0:
+        if ticker and year and fin_type:
+            company = yf.Ticker(ticker)
+            if fin_type == "balance_sheet":
+                financials = company.balance_sheet
+            elif fin_type == "income_statement":
+                financials = company.financials
+            elif fin_type == "cash_flow":
+                financials = company.cashflow
+
+            if financials is not None and not financials.empty:
+                try:
+                    financials.columns = financials.columns.strftime('%Y')  # Convert DateTimeIndex to year string
+                    if str(year) in financials.columns:
+                        data = financials[str(year)]
+                        return html.Div([
+                            dash_table.DataTable(
+                                data=data.reset_index().to_dict('records'),
+                                columns=[{'name': i, 'id': i} for i in data.reset_index().columns]
+                            )
+                        ], style={'width': '100%', 'display': 'flex', 'justify-content': 'flex-start'})
+                    else:
+                        return html.P("No data available for this year.")
+                except Exception as e:
+                    return html.P(f"An error occurred: {str(e)}")
+            else:
+                return html.P("No financial data available.")
+        else:
+            return html.P("Please enter a ticker and select year and financial statement type.")
+    return html.Div()
 
 
 if __name__ == '__main__':
