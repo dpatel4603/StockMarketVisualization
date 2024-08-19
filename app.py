@@ -16,6 +16,7 @@ app.layout = html.Div([
         dcc.Tab(label="Stock Prices", value='home'),
         dcc.Tab(label="Technical Indicators", value='tech-ind'),
         dcc.Tab(label="Predictive Analysis", value='pred-ind'),
+        dcc.Tab(label="Current News and Stock Information", value='news'),
     ]),
     html.Div(id='tabs-content')
 ])
@@ -27,8 +28,14 @@ def render_content(tab):
     if tab == 'home':
         return html.Div([
             html.H3('Stock Prices Over Time'),
-            html.P("Enter stock ticker:"),
-            dcc.Input(id="ticker", type="text", placeholder="Enter ticker like AAPL", debounce=True, value="AAPL"),
+            html.Div([
+                html.P("Enter stock ticker:"),
+                dcc.Input(id="ticker", type="text", placeholder="Enter ticker like AAPL", debounce=True, value="AAPL"),
+                html.Br(),
+                html.P("Enter another optional ticker: "),
+                dcc.Input(id="ticker-2", type="text", placeholder="Optional enter a ticker here", debounce=True,
+                          required=False),
+            ], style={'display': 'flex', 'alignItems': 'center', 'gap': '10px'}),
             html.P("Select Beginning Time: "),
             dcc.Input(id="beg-time", type="text", placeholder="YYYY-MM-DD", debounce=True, value=last_month),
             html.P("Select Ending Time: "),
@@ -55,15 +62,29 @@ def render_content(tab):
 @app.callback(
     Output("time-series-chart", "figure"),
     [Input("ticker", "value"),
+     Input("ticker-2", "value"),
      Input("beg-time", "value"),
      Input("end-time", "value")])
-def display_time_series(ticker, start_date, end_date):
+def display_time_series(ticker, ticker2, start_date, end_date):
     if ticker and start_date and end_date:
-        stock = yf.Ticker(ticker)
-        df = stock.history(start=start_date, end=end_date)
-        fig = px.line(df, x=df.index, y='Close', title=f'{ticker} Closing Prices Over Time')
-        fig.update_layout(xaxis_title='Date', yaxis_title='Close Price')
-        return fig
+        try:
+            stock = yf.Ticker(ticker)
+            df = stock.history(start=start_date, end=end_date)
+            fig = go.Figure()
+            fig.add_scatter(x=df.index, y=df['Close'], mode='lines', name=f'{ticker}')
+            fig.update_layout(xaxis_title='Dates', yaxis_title='Close Price',
+                              legend_title='Company Names', title=f'{ticker} from {start_date} - {end_date}')
+
+            if ticker2:  # Check if there's a second ticker provided
+                stock2 = yf.Ticker(ticker2)
+                df2 = stock2.history(start=start_date, end=end_date)
+                if not df2.empty:
+                    fig.add_scatter(x=df2.index, y=df2['Close'], mode='lines', name=f'{ticker2}')
+                    fig.update_layout(title=f"{ticker} and {ticker2} from {start_date} - {end_date}")
+
+            return fig
+        except Exception as e:
+            return px.line(title=f"An error occurred: {str(e)}")
     else:
         return px.line(title="Please provide ticker, start date, and end date")
 
@@ -80,8 +101,10 @@ def display_candlestick_graph(ticker, start_date, end_date):
             df = stock.history(start=start_date, end=end_date)
             # Ensuring there is data to plot
             if not df.empty:
-                fig = go.Figure(data=[go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'])])
-                fig.update_layout(xaxis_title='Date', yaxis_title='Candlestick', title=f'{ticker} Candlestick Chart from {start_date} to {end_date}')
+                fig = go.Figure(data=[
+                    go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'])])
+                fig.update_layout(xaxis_title='Date', yaxis_title='Candlestick',
+                                  title=f'{ticker} Candlestick Chart from {start_date} - {end_date}')
                 return fig
             else:
                 return go.Figure()  # Returning an empty figure if no data is available
