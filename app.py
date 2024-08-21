@@ -3,6 +3,10 @@ import yfinance as yf
 import plotly.express as px
 import plotly.graph_objects as go
 import datetime as dt
+from sklearn.linear_model import LinearRegression
+import pandas as pd
+import numpy as np
+import requests
 
 app = Dash(__name__, suppress_callback_exceptions=True, title="Stock Market Visualization")
 
@@ -26,7 +30,7 @@ app.layout = html.Div([
 
 
 def get_quarter_dates(year, quarter_start):
-    """ Helper function to get the start and end date of a quarter given the year and the start month of the quarter. """
+    """ Helper function to get the start and end date of a quarter given the year and the start month of the quarter."""
     if quarter_start is None:
         return None, None  # Return None if quarter_start is not provided
     start_date = dt.datetime.strptime(f"{year}-{quarter_start}", "%Y-%m-%d")
@@ -74,12 +78,27 @@ def render_content(tab):
         ])
     elif tab == 'tech-ind':
         return html.Div([
-          dcc.Graph(id="graph-3")
+            html.H3('Technical Indicators'),
+            html.Div([
+                html.P("Enter stock ticker:"),
+                dcc.Input(id="tech-ticker", type="text", placeholder="Enter ticker like AAPL", debounce=True, value="AAPL"),
+                html.P("Select Technical Indicator"),
+                dcc.Dropdown(options=[
+                    {'label': 'Simple Moving Average (SMA)', 'value': 'SMA'},
+                    {'label': 'Exponential Moving Average (EMA)', 'value': 'EMA'},
+                    {'label': 'Relative Strength Index (RSI)', 'value': 'RSI'}
+                ], value='SMA', id="tech-ind-dropdown"),
+                dcc.Input(id="window-size", type="number", placeholder="Enter window size for SMA/EMA", value=14)
+            ], style={'alignItems': 'center', 'gap': '20px'}),
+            dcc.Graph(id="tech-indicator-chart")
         ])
     elif tab == 'pred-ind':
         return html.Div([
             html.H3('Predictive Analysis'),
-            dcc.Graph(id='graph-3'),
+            dcc.Input(id="pred-ticker", type="text", placeholder="Enter ticker like AAPL", debounce=True, value="AAPL"),
+            html.P("Enter number of days to predict:"),
+            dcc.Input(id="days-ahead", type="number", placeholder="Days ahead", value=30),
+            dcc.Graph(id='pred-indicator-chart'),
         ])
     elif tab == 'company-fin':
         return html.Div([
@@ -110,8 +129,9 @@ def render_content(tab):
     elif tab == 'news':
         return html.Div([
             html.H3('Recent News and Stock Information'),
+            dcc.Input(id="news-ticker", type="text", placeholder="Enter ticker like AAPL", debounce=True, value="AAPL"),
+            html.Div(id="news-output")
         ])
-
 
 
 @app.callback(
@@ -175,6 +195,111 @@ def display_candlestick_graph(ticker, start_date, end_date, year, quarter):
         return fig
     except Exception as e:
         return px.line(title=f"An error occurred: {str(e)}")
+
+
+@app.callback(
+    Output("tech-indicator-chart", "figure"),
+    [Input("tech-ticker", "value"), Input("tech-ind-dropdown", "value"), Input("window-size", "value")]
+)
+def update_tech_indicators(ticker, indicator, window_size):
+    try:
+        df = yf.download(ticker, period='1y')
+        if df.empty:
+            return px.line(title="No data available.")
+        if indicator == 'SMA':
+            df['SMA'] = df['Close'].rolling(window=window_size).mean()
+            fig = px.line(df, x=df.index, y=['Close', 'SMA'], title=f'SMA for {ticker}')
+        elif indicator == 'EMA':
+            df['EMA'] = df['Close'].ewm(span=window_size, adjust=False).mean()
+            fig = px.line(df, x=df.index, y=['Close', 'EMA'], title=f'EMA for {ticker}')
+        elif indicator == 'RSI':
+            delta = df['Close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=window_size).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=window_size).mean()
+            rs = gain / loss
+            df['RSI'] = 100 - (100 / (1 + rs))
+            fig = px.line(df, x=df.index, y='RSI', title=f'RSI for {ticker}')
+        else:
+            return px.line(title="Invalid indicator selected.")
+        return fig
+    except Exception as e:
+        return px.line(title=f"An error occurred: {str(e)}")
+
+
+@app.callback(
+    Output("pred-indicator-chart", "figure"),
+    [Input("pred-ticker", "value"), Input("days-ahead", "value")]
+)
+def update_predictive_analysis(ticker, days_ahead):
+    try:
+        df = yf.download(ticker, period='1y')
+        if df.empty:
+            return px.line(title="No data available.")
+
+        # Prepare data for modeling
+        df['Date'] = df.index
+        df['Days'] = (df['Date'] - df['Date'].min()).dt.days
+        X = df[['Days']]
+        y = df['Close']
+
+        # Fit linear regression model
+        model = LinearRegression()
+        model.fit(X, y)
+
+        # Predict future values
+        last_day = X['Days'].max()
+        future_days = pd.DataFrame({'Days': np.arange(last_day + 1, last_day + 1 + days_ahead)})
+        future_dates = df['Date'].max() + pd.to_timedelta(future_days['Days'] - last_day, unit='D')
+        predictions = model.predict(future_days)
+
+        # Construct future data for plotting
+        future_df = pd.DataFrame({'Date': future_dates, 'Predicted Close': predictions})
+
+        # Combine historical and predicted data for a seamless plot
+        fig = go.Figure()
+        fig.add_scatter(x=df['Date'], y=df['Close'], mode='lines', name='Historical Close')
+        fig.add_scatter(x=future_df['Date'], y=future_df['Predicted Close'], mode='lines', name='Predicted Close',
+                        line=dict(dash='dash'))
+
+        # Improve layout
+        fig.update_layout(
+            title=f'{ticker} Predictive Analysis for Next {days_ahead} Days',
+            xaxis_title='Date',
+            yaxis_title='Price',
+            showlegend=True
+        )
+
+        return fig
+    except Exception as e:
+        return px.line(title=f"An error occurred: {str(e)}")
+
+
+@app.callback(
+    Output("news-output", "children"),
+    [Input("news-ticker", "value")]
+)
+def update_news(ticker):
+    api_key = 'api-key'
+    url = f'https://newsapi.org/v2/everything?q={ticker}&sortBy=publishedAt&apiKey={api_key}'
+    try:
+        response = requests.get(url)
+        news_data = response.json()
+
+        if news_data['status'] != 'ok':
+            return html.P(f"An error occurred: {news_data.get('message', 'Unknown error')}")
+
+        articles = news_data['articles'][:5]  # Get the top 5 news articles
+        news_items = []
+        for article in articles:
+            news_items.append(html.Div([
+                html.H4(article['title']),
+                html.P(article['description']),
+                html.A("Read more", href=article['url'], target="_blank")
+            ]))
+        return html.Div(news_items)
+    except Exception as e:
+        return html.P(f"An error occurred: {str(e)}")
+
 
 @app.callback(
     Output('financial-output', 'children'),
